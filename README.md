@@ -1,37 +1,46 @@
 # Multilingual Enterprise RAG Assistant
 
-A decoupled, hybrid Retrieval-Augmented Generation (RAG) assistant designed for enterprise documents across multiple languages (e.g., English, Sinhala, Tamil). The system integrates FastAPI, PostgreSQL (with the `pgvector` extension), HNSW indexes for sub-millisecond similarity searches, Sentence Transformers for multilingual dense embeddings, and an LLM for grounded contextual answer generation.
+A decoupled, production-optimized Retrieval-Augmented Generation (RAG) assistant designed for enterprise documents across multiple languages (e.g., English, Sinhala, Tamil). The system integrates FastAPI, PostgreSQL (with the `pgvector` extension), GIN lexical search indexing, Reciprocal Rank Fusion (RRF), Cross-Encoder Re-ranking, and Langfuse tracing to achieve state-of-the-art retrieval accuracy and observability.
 
 ---
 
-## Architecture Overview
+## Enhanced Architecture & Pipeline
 
-```
+The retrieval pipeline consists of 6 key phases to optimize relevance and cross-lingual compliance:
+
+```text
                                   [ Client UI / Mobile ]
                                              │
                                      (HTTP REST / SSE)
                                              ▼
                              ┌───────────────────────────────┐
-                             │     FastAPI Gateway (App)     │
+                             │     FastAPI Gateway (App)     │  (Port 8008)
                              │  - Auth & Metadata Filters    │
                              │  - Lang Detection & Chunker   │
                              │  - Vector Retrieval Engine    │
                              └───────────────┬───────────────┘
                                              │
-                      ┌──────────────────────┴──────────────────────┐
-                      ▼                                             ▼
-          ┌───────────────────────┐                     ┌───────────────────────┐
-          │ PostgreSQL + pgvector │                     │   LLM & Embeddings    │
-          │  - Hybrid Search      │                     │  - multilingual-e5    │
-          │  - HNSW Index         │                     │  - Llama 3 / Mistral  │
-          │  - Metadata Filtering │                     │    (Ollama or API)    │
-          └───────────────────────┘                     └───────────────────────┘
+                       ┌─────────────────────┴─────────────────────┐
+                       ▼                                           ▼
+           ┌───────────────────────┐                   ┌───────────────────────┐
+           │ PostgreSQL + pgvector │                   │   LLM & Embeddings    │
+           │  - Port 5433          │                   │  - multilingual-e5    │
+           │  - HNSW Dense Index   │                   │  - MiniLM-L-6-v2      │
+           │  - FTS Simple Index   │                   │    Cross-Encoder      │
+           │  - RRF Fusion Stage   │                   │  - OpenAI GPT-4o-mini │
+           └───────────────────────┘                   └───────────────────────┘
 ```
 
-1. **Ingestion & Text Processing**: Parses incoming PDF files using `PyMuPDF` (`pymupdf`), runs language detection using `langdetect`, and chunks the text page-by-page using recursive overlap boundaries.
-2. **Dense Multilingual Vector Embeddings**: Uses `sentence-transformers` with the `intfloat/multilingual-e5-base` model to produce 768-dimensional dense vectors to support cross-lingual semantic matching.
-3. **Database & Indexing Layer**: PostgreSQL enhanced with `pgvector`. Employs an **HNSW (Hierarchical Navigable Small World)** index for sub-millisecond approximate nearest neighbor (ANN) retrieval based on cosine distance.
-4. **Context Synthesis**: Retrieves top-$k$ relevant chunks, constructs grounded system prompts with strict anti-hallucination rules, and streams or returns source-attributed answers.
+1. **Multi-Modal Layout Ingestion**: Extracts text using `PyMuPDF` and executes page-level table grid detection (`page.find_tables()`). Discovered tables are formatted into structured GFM Markdown and appended to the text context. Empty or scanned visual pages are tagged with placeholders (e.g. `[Scanned Visual Page...]`) rather than skipped.
+2. **Hierarchical (Parent-Child) Chunking**: Page contents are saved as `DocumentParentChunk` nodes. Then, pages are split into smaller overlapping child chunks (150 words, 30 words overlap) which are embedded using the `intfloat/multilingual-e5-base` model.
+3. **Query Pre-processing (HyDE & Translation)**:
+   - Identifies query script language using `langdetect`.
+   - Translates non-English queries (Sinhala/Tamil) to English using OpenAI.
+   - Generates a hypothetical paragraph answer (HyDE) using the LLM for optimized passage alignment.
+4. **Hybrid Retrieval**: Queries the database using the hypothetical answer embedding for pgvector cosine similarity, while concurrently executing full-text lexical matches (GIN indexing) on the combined string of the original + translated query.
+5. **Reciprocal Rank Fusion (RRF)**: Merges dense and sparse candidates to rank them based on combined rank values.
+6. **Cross-Encoder Re-ranking**: Scores the top 12 RRF candidates using a lightweight Cross-Encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`) on CPU/CUDA, selecting only the top 3-4 highly relevant chunks.
+7. **Context Synthesis & Tracing**: Synthesizes the final response using parent page context blocks and logs tracing events asynchronously to Langfuse.
 
 ---
 
@@ -41,23 +50,25 @@ A decoupled, hybrid Retrieval-Augmented Generation (RAG) assistant designed for 
 rag-assistant/
 ├── app/
 │   ├── __init__.py
-│   ├── config.py              # Configuration & Environment parsing
-│   ├── database.py            # SQLAlchemy engine, session, & table init
-│   ├── models.py              # SQLAlchemy tables (Document & DocumentChunk)
-│   ├── schemas.py             # Pydantic validation schemas
+│   ├── config.py              # Configuration settings (HyDE, Reranker, Langfuse)
+│   ├── database.py            # Async engine, session, table and index creation
+│   ├── models.py              # SQLAlchemy tables (Parent & Child Chunks)
+│   ├── schemas.py             # Pydantic schemas (Query & Ingestion payloads)
 │   ├── services/
 │   │   ├── __init__.py
-│   │   ├── document_parser.py # PDF text extraction and chunk splitting
-│   │   ├── embedding_service.py # Vector embedding generation (multilingual-e5)
-│   │   └── rag_engine.py      # Cosine-similarity DB query and LLM synthesis
+│   │   ├── document_parser.py # PDF layout table parser and child splitter
+│   │   ├── embedding_service.py # Vector embedding generator (multilingual-e5)
+│   │   ├── reranker_service.py # BGE/MiniLM Cross-Encoder re-ranker
+│   │   ├── observability.py   # Langfuse Tracing initialization client
+│   │   └── rag_engine.py      # Pre-processing, hybrid RRF, and synthesis
 │   └── routes/
 │       ├── __init__.py
-│       ├── documents.py       # PDF document upload routes
-│       └── chat.py            # RAG query routes
-├── docker-compose.yml         # PostgreSQL + pgvector docker service
+│       ├── documents.py       # PDF document upload (Page parent & child link)
+│       └── chat.py            # RAG query routes with Langfuse span tracing
+├── docker-compose.yml         # PostgreSQL + pgvector (Port 5433)
 ├── requirements.txt           # Python application dependencies
 ├── .env                       # Environment configuration details
-└── main.py                    # Gateway application entrypoint
+└── main.py                    # Gateway application entrypoint (Port 8008)
 ```
 
 ---
@@ -66,100 +77,76 @@ rag-assistant/
 
 ### Prerequisites
 
-- **Python**: Version 3.10 or higher.
-- **Docker**: Docker Desktop (Windows) or Docker Daemon running.
-- **API Key**: An OpenAI API key (or you can use the built-in mock fallback for testing).
+- **Python**: Version `3.10` or higher.
+- **Docker**: Docker Desktop running.
+- **OpenAI API Key** (Optional: Fallbacks to mock responses if key is mock).
 
 ### Setup Instructions
 
 1. **Clone & Navigate**:
-   Ensure you are in the project root directory:
    ```bash
    cd "d:/xampp/htdocs/DocuTrace AI"
    ```
 
 2. **Start the Vector Database**:
-   Ensure Docker Desktop is open and active on your system, then start the container:
    ```bash
    docker compose up -d
    ```
+   *Note: PostgreSQL maps to host port `5433` to prevent conflicts with local SQL databases.*
 
-3. **Set Up Python Virtual Environment**:
-   Create and activate a virtual environment, then install requirements:
+3. **Install Dependencies**:
    ```bash
    # Create environment
    python -m venv .venv
 
-   # Activate and install dependencies (Windows)
+   # Activate and install dependencies (Windows PowerShell)
    .venv\Scripts\pip install -r requirements.txt
    ```
 
-4. **Configure Environment Variables**:
-   Open the `.env` file and insert your credentials. For example:
+4. **Configure Credentials (`.env`)**:
    ```ini
-   DATABASE_URL=postgresql+asyncpg://rag_user:rag_password@localhost:5432/rag_documents
+   DATABASE_URL=postgresql+asyncpg://rag_user:rag_password@localhost:5433/rag_documents
    EMBEDDING_MODEL_NAME=intfloat/multilingual-e5-base
-   OPENAI_API_KEY=your-openai-api-key-here
+   OPENAI_API_KEY=your-openai-key
    LLM_MODEL=gpt-4o-mini
    EMBEDDING_DIMENSION=768
+   ENABLE_HYDE=True
+   ENABLE_TRANSLATION=True
+   ENABLE_RERANKER=True
+   CROSS_ENCODER_MODEL_NAME=cross-encoder/ms-marco-MiniLM-L-6-v2
+   # Optional Langfuse tracing keys
+   LANGFUSE_PUBLIC_KEY=
+   LANGFUSE_SECRET_KEY=
+   LANGFUSE_HOST=https://cloud.langfuse.com
    ```
-   *Note: If `OPENAI_API_KEY` remains as `"mock-or-actual-key"`, the system automatically runs in mock-synthesis mode for testing.*
 
 5. **Start the API Server**:
-   Launch the FastAPI application:
    ```bash
    .venv\Scripts\python main.py
    ```
-   *Note: On start, the server will connect to Postgres, enable the `vector` database extension, create schemas, and set up the HNSW index.*
+   *Note: The FastAPI application listens on port `8008`.*
 
 ---
 
-## API Endpoints & Usage
+## Verification Test Scripts
 
-Once the server is running, the interactive documentation is available at `http://localhost:8000/docs`.
+Five scratch verification scripts are provided under the `scratch/` directory to validate the RAG components:
 
-### 1. Document Upload
-Ingests PDF documents, parses content page-by-page, generates vector embeddings, and stores them in Postgres.
+1. **`test_hybrid.py`**: Ingests a policy containing a unique serial ID `"B-77-Z"`. Queries for `"B-77-Z"` and verifies RRF retrieves the exact match lexical chunk despite low semantic vector scores.
+2. **`test_parent_child.py`**: Ingests a multiline document and queries for details. Verifies child chunks retrieve page-level parent chunks for synthesis while retaining the exact child snippet for source citations.
+3. **`test_query_expansion.py`**: Queries in Sinhala (`"ඩ්‍රෝන යානයේ..."`) against English document text. Verifies cross-lingual script detection and retrieval success.
+4. **`test_table_parsing.py`**: Ingests drawn table grids, converts them to Markdown tables, and verifies that the assistant answers query details (e.g. Leave policy figures) correctly.
+5. **`test_observability.py`**: Verifies RAG queries execute smoothly when Langfuse is disabled or empty.
 
-* **Endpoint**: `POST /documents/upload`
-* **Content-Type**: `multipart/form-data`
-* **Payload**:
-  - `file`: (PDF file)
-  - `department`: (e.g., `HR`, `Engineering`, `Finance`)
-* **Response**:
-  ```json
-  {
-    "document_id": "550e8400-e29b-41d4-a716-446655440000",
-    "filename": "vacation_policy.pdf",
-    "chunks_indexed": 12,
-    "detected_language": "en"
-  }
-  ```
+Run test scripts via PowerShell:
+```powershell
+$env:PYTHONIOENCODING="utf-8"; .venv\Scripts\python "C:/Users/Sadeep/.gemini/antigravity-ide/brain/56b49822-3989-45f7-b663-c4e87459f622/scratch/test_table_parsing.py"
+```
 
-### 2. RAG Query
-Executes a similarity search across stored chunks and synthesizes a grounded response.
+---
 
-* **Endpoint**: `POST /rag/query`
-* **Content-Type**: `application/json`
-* **Payload**:
-  ```json
-  {
-    "query": "How many casual leave days do I have?",
-    "department": "HR",
-    "similarity_top_k": 4
-  }
-  ```
-* **Response**:
-  ```json
-  {
-    "answer": "According to the HR policy, you are entitled to 14 casual leave days per year [vacation_policy.pdf, p. 2].",
-    "sources": [
-      {
-        "document_name": "vacation_policy.pdf",
-        "page_number": 2,
-        "content_snippet": "Full-time employees receive 14 days of casual leave...",
-        "similarity_score": 0.8924
-      }
-    ]
-  }
-  ```
+## API Documentation
+
+Once the server is running, the interactive documentation is available at `http://localhost:8008/docs`.
+- **Upload Endpoint**: `POST /documents/upload`
+- **RAG Chat Endpoint**: `POST /rag/query`
