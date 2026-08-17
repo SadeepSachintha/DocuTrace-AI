@@ -17,11 +17,21 @@ class Document(Base):
     total_pages = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class DocumentParentChunk(Base):
+    __tablename__ = "document_parent_chunks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    chunk_index = Column(Integer, nullable=False)
+    content = Column(Text, nullable=False)
+    page_number = Column(Integer, nullable=False)
+
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    parent_chunk_id = Column(UUID(as_uuid=True), ForeignKey("document_parent_chunks.id", ondelete="CASCADE"), nullable=True)
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
     page_number = Column(Integer, nullable=False)

@@ -27,7 +27,7 @@ async def query_rag_assistant(
         CitationSource(
             document_name=chunk["filename"],
             page_number=chunk["page"],
-            content_snippet=chunk["content"][:200] + "...",
+            content_snippet=chunk.get("child_content", chunk["content"])[:200] + "...",
             similarity_score=round(chunk["score"], 4)
         )
         for chunk in retrieved_chunks

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.models import Document, DocumentChunk
+from app.models import Document, DocumentChunk, DocumentParentChunk
 from app.services.document_parser import DocumentParserService
 from app.services.embedding_service import embedding_service
 from app.schemas import DocumentUploadResponse
@@ -34,18 +34,41 @@ async def upload_document(
     db.add(doc_record)
     await db.flush()
 
-    # 2. Chunk Text & Embed
-    chunks = DocumentParserService.chunk_text(pages_content)
-    raw_texts = [c["content"] for c in chunks]
+    # 2. Store Parent Chunks (Full Pages)
+    parent_chunk_objects = []
+    parent_map = {} # Maps page_number to parent_chunk_id
+    for idx, page_data in enumerate(pages_content):
+        parent_obj = DocumentParentChunk(
+            document_id=doc_record.id,
+            chunk_index=idx,
+            content=page_data["text"],
+            page_number=page_data["page"]
+        )
+        parent_chunk_objects.append(parent_obj)
+        db.add(parent_obj)
+    
+    await db.flush() # Flushes parent chunks to assign auto-generated UUIDs
+
+    # Build mapping from page_number to parent chunk ID
+    for parent_obj in parent_chunk_objects:
+        parent_map[parent_obj.page_number] = parent_obj.id
+
+    # 3. Chunk Text to Children & Embed
+    child_chunks = DocumentParserService.chunk_text(pages_content, chunk_size=150, chunk_overlap=30)
+    raw_texts = [c["content"] for c in child_chunks]
     embeddings = embedding_service.generate_passage_embeddings(raw_texts)
 
     chunk_objects = []
-    for idx, (chunk_data, vector) in enumerate(zip(chunks, embeddings)):
+    for idx, (chunk_data, vector) in enumerate(zip(child_chunks, embeddings)):
+        page_num = chunk_data["page"]
+        parent_id = parent_map.get(page_num)
+        
         chunk_obj = DocumentChunk(
             document_id=doc_record.id,
+            parent_chunk_id=parent_id,
             chunk_index=idx,
             content=chunk_data["content"],
-            page_number=chunk_data["page"],
+            page_number=page_num,
             embedding=vector
         )
         chunk_objects.append(chunk_obj)

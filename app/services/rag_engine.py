@@ -2,7 +2,7 @@ import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, text, func
 from openai import AsyncOpenAI
-from app.models import DocumentChunk, Document
+from app.models import DocumentChunk, Document, DocumentParentChunk
 from app.services.embedding_service import embedding_service
 from app.config import settings
 from typing import List, Dict, Any
@@ -21,35 +21,39 @@ class RAGEngine:
         # 1. Generate query embedding for dense search
         query_vector = embedding_service.generate_query_embedding(query)
         
-        # Dense Query definition: Cosine similarity search using pgvector
+        # Dense Query definition: Cosine similarity search joining parent context
         distance_col = DocumentChunk.embedding.cosine_distance(query_vector).label("distance")
         dense_stmt = (
             select(
-                DocumentChunk.content,
+                DocumentChunk.content.label("child_content"),
+                DocumentParentChunk.content.label("parent_content"),
                 DocumentChunk.page_number,
                 Document.filename,
                 distance_col
             )
             .join(Document, DocumentChunk.document_id == Document.id)
+            .outerjoin(DocumentParentChunk, DocumentChunk.parent_chunk_id == DocumentParentChunk.id)
             .order_by(distance_col)
             .limit(top_k * 2) # Fetch extra candidates for fusion
         )
         if department:
             dense_stmt = dense_stmt.where(Document.department == department)
 
-        # Sparse Query definition: Lexical match search using full-text TSQuery
+        # Sparse Query definition: Lexical FTS match joining parent context
         tsvector_col = func.to_tsvector('simple', DocumentChunk.content)
         tsquery_col = func.plainto_tsquery('simple', query)
         lexical_score = func.ts_rank(tsvector_col, tsquery_col).label("score")
         
         sparse_stmt = (
             select(
-                DocumentChunk.content,
+                DocumentChunk.content.label("child_content"),
+                DocumentParentChunk.content.label("parent_content"),
                 DocumentChunk.page_number,
                 Document.filename,
                 lexical_score
             )
             .join(Document, DocumentChunk.document_id == Document.id)
+            .outerjoin(DocumentParentChunk, DocumentChunk.parent_chunk_id == DocumentParentChunk.id)
             .where(tsvector_col.op('@@')(tsquery_col))
             .order_by(lexical_score.desc())
             .limit(top_k * 2) # Fetch extra candidates for fusion
@@ -79,31 +83,32 @@ class RAGEngine:
 
         # Parse dense results and assign RRF ranks
         for rank, row in enumerate(dense_rows):
-            content, page, filename, dist = row
-            key = (filename, page, content)
+            child_content, parent_content, page, filename, dist = row
+            key = (filename, page, child_content)
             
             if key not in rrf_scores:
                 rrf_scores[key] = 0.0
                 candidate_data[key] = {
                     "filename": filename,
                     "page": page,
-                    "content": content,
+                    "content": parent_content or child_content, # Pass parent context to LLM
+                    "child_content": child_content,
                     "base_score": float(1 - dist)
                 }
             rrf_scores[key] += 1.0 / (k + (rank + 1))
 
         # Parse sparse results and accumulate RRF ranks
         for rank, row in enumerate(sparse_rows):
-            content, page, filename, lex_score = row
-            key = (filename, page, content)
+            child_content, parent_content, page, filename, lex_score = row
+            key = (filename, page, child_content)
             
             if key not in rrf_scores:
                 rrf_scores[key] = 0.0
                 candidate_data[key] = {
                     "filename": filename,
                     "page": page,
-                    "content": content,
-                    # Fallback base score for purely lexical matches
+                    "content": parent_content or child_content, # Pass parent context to LLM
+                    "child_content": child_content,
                     "base_score": 0.5
                 }
             rrf_scores[key] += 1.0 / (k + (rank + 1))
@@ -118,6 +123,7 @@ class RAGEngine:
                 "filename": data["filename"],
                 "page": data["page"],
                 "content": data["content"],
+                "child_content": data["child_content"],
                 # We return the RRF score rounded for verification
                 "score": round(rrf_scores[key], 4)
             })

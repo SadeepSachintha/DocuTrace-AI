@@ -24,6 +24,11 @@ async def init_db():
             async with engine.begin() as conn:
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
                 await conn.run_sync(Base.metadata.create_all)
+                # Ensure parent_chunk_id column is added to document_chunks table if not present
+                await conn.execute(text("""
+                    ALTER TABLE document_chunks 
+                    ADD COLUMN IF NOT EXISTS parent_chunk_id UUID REFERENCES document_parent_chunks(id) ON DELETE CASCADE;
+                """))
                 # Create HNSW index for high performance vector retrieval
                 await conn.execute(text("""
                     CREATE INDEX IF NOT EXISTS chunk_embeddings_hnsw_idx 
