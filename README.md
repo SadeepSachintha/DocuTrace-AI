@@ -1,6 +1,8 @@
 # Multilingual Enterprise RAG Assistant
 
-A decoupled, production-optimized Retrieval-Augmented Generation (RAG) assistant designed for enterprise documents across multiple languages (e.g., English, Sinhala, Tamil). The system integrates FastAPI, PostgreSQL (with the `pgvector` extension), GIN lexical search indexing, Reciprocal Rank Fusion (RRF), Cross-Encoder Re-ranking, and Langfuse tracing to achieve state-of-the-art retrieval accuracy and observability.
+**DocuTrace AI** is a decoupled, production-optimized Retrieval-Augmented Generation (RAG) assistant designed for enterprise documents across multiple languages (e.g., English, Sinhala, Tamil). 
+
+Developed and branded as a product of **[SS Labz](https://ss-labz.pages.dev/)**, the system integrates FastAPI, PostgreSQL (with the `pgvector` extension), GIN lexical search indexing, Reciprocal Rank Fusion (RRF), Cross-Encoder Re-ranking, and Langfuse tracing to achieve state-of-the-art retrieval accuracy and observability.
 
 ---
 
@@ -65,11 +67,23 @@ rag-assistant/
 │       ├── __init__.py
 │       ├── documents.py       # PDF document upload (Page parent & child link)
 │       └── chat.py            # RAG query routes with Langfuse span tracing
+├── app/templates/
+│   └── index.html             # Premium User interface HTML dashboard
+├── USER_MANUAL.md             # End-user guide for dashboard features
+├── PRODUCT_HANDOVER.md        # Technical specs, maintenance, and backup guides
 ├── docker-compose.yml         # PostgreSQL + pgvector (Port 5433)
 ├── requirements.txt           # Python application dependencies
 ├── .env                       # Environment configuration details
 └── main.py                    # Gateway application entrypoint (Port 8008)
 ```
+
+---
+
+## Documentation Links
+
+For more details on deploying and operating this product:
+- **[User Manual](file:///d:/xampp/htdocs/DocuTrace%20AI/USER_MANUAL.md)**: Steps to upload and query policies, view citations, and troubleshoot issues.
+- **[Product Handover Plan](file:///d:/xampp/htdocs/DocuTrace%20AI/PRODUCT_HANDOVER.md)**: Server setup commands, database backups, logs monitoring, and environment keys setup.
 
 ---
 
@@ -133,10 +147,10 @@ rag-assistant/
 Five scratch verification scripts are provided under the `scratch/` directory to validate the RAG components:
 
 1. **`test_hybrid.py`**: Ingests a policy containing a unique serial ID `"B-77-Z"`. Queries for `"B-77-Z"` and verifies RRF retrieves the exact match lexical chunk despite low semantic vector scores.
-2. **`test_parent_child.py`**: Ingests a multiline document and queries for details. Verifies child chunks retrieve page-level parent chunks for synthesis while retaining the exact child snippet for source citations.
-3. **`test_query_expansion.py`**: Queries in Sinhala (`"ඩ්‍රෝන යානයේ..."`) against English document text. Verifies cross-lingual script detection and retrieval success.
+2. **`test_parent_child.py`**: Ingests a multiline document and queries for details. Verifies child chunks retrieve page-level parent chunks for synthesis while citations use child text snippets.
+3. **`test_query_expansion.py`**: Queries in Sinhala (`"ඩ්‍රෝන යානයේ..."`). Verifies cross-lingual script detection and retrieval success.
 4. **`test_table_parsing.py`**: Ingests drawn table grids, converts them to Markdown tables, and verifies that the assistant answers query details (e.g. Leave policy figures) correctly.
-5. **`test_observability.py`**: Verifies RAG queries execute smoothly when Langfuse is disabled or empty.
+5. **`test_observability.py`**: Verifies query runs smoothly without warnings when Langfuse is disabled or empty.
 
 Run test scripts via PowerShell:
 ```powershell
@@ -145,8 +159,6 @@ $env:PYTHONIOENCODING="utf-8"; .venv\Scripts\python "C:/Users/Sadeep/.gemini/ant
 
 ---
 
-## API Documentation
+## About SS Labz
 
-Once the server is running, the interactive documentation is available at `http://localhost:8008/docs`.
-- **Upload Endpoint**: `POST /documents/upload`
-- **RAG Chat Endpoint**: `POST /rag/query`
+**DocuTrace AI** is proudly developed by **[SS Labz](https://ss-labz.pages.dev/)**, dedicated to creating intelligent, localized enterprise solutions. Visit our website at [https://ss-labz.pages.dev/](https://ss-labz.pages.dev/) to discover more systems and products.
