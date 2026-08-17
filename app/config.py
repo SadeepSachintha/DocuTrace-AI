@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = "mock-or-actual-key"
     LLM_MODEL: str = "gpt-4o-mini"
     EMBEDDING_DIMENSION: int = 768
+    ENABLE_HYDE: bool = True
+    ENABLE_TRANSLATION: bool = True
 
     class Config:
         env_file = ".env"

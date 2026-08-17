@@ -1,4 +1,5 @@
 import asyncio
+from langdetect import detect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, text, func
 from openai import AsyncOpenAI
@@ -18,8 +19,53 @@ class RAGEngine:
         department: str | None = None, 
         top_k: int = 4
     ) -> List[Dict[str, Any]]:
-        # 1. Generate query embedding for dense search
-        query_vector = embedding_service.generate_query_embedding(query)
+        # Detect query language
+        try:
+            detected_lang = detect(query)
+        except Exception:
+            detected_lang = "en"
+
+        # Translate query if non-English
+        translated_query = query
+        is_mock_key = not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY.startswith("mock")
+        
+        if settings.ENABLE_TRANSLATION and detected_lang != "en" and not is_mock_key:
+            try:
+                sys_prompt = "You are a professional translator. Translate the following user query to English. Do not add any explanation or greeting, just provide the exact translation."
+                response = await openai_client.chat.completions.create(
+                    model=settings.LLM_MODEL,
+                    messages=[
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": query}
+                    ],
+                    temperature=0.0
+                )
+                translated_query = response.choices[0].message.content.strip()
+                print(f"Translated query '{query}' ({detected_lang}) -> '{translated_query}' (en)")
+            except Exception as e:
+                print(f"Query translation failed: {e}")
+
+        # Hypothetical Document Embeddings (HyDE) expansion
+        search_text = translated_query
+        if settings.ENABLE_HYDE and not is_mock_key:
+            try:
+                sys_prompt = "You are a corporate search helper. Write a brief, direct 1-2 sentence hypothetical answer to the user query that might appear in a company policy document. Do not add any greeting, preamble, or formatting."
+                response = await openai_client.chat.completions.create(
+                    model=settings.LLM_MODEL,
+                    messages=[
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": translated_query}
+                    ],
+                    temperature=0.0
+                )
+                hyde_answer = response.choices[0].message.content.strip()
+                search_text = hyde_answer
+                print(f"HyDE expansion for query '{translated_query}' -> '{hyde_answer}'")
+            except Exception as e:
+                print(f"HyDE generation failed: {e}")
+
+        # Generate query embedding on the expanded/translated text
+        query_vector = embedding_service.generate_query_embedding(search_text)
         
         # Dense Query definition: Cosine similarity search joining parent context
         distance_col = DocumentChunk.embedding.cosine_distance(query_vector).label("distance")
@@ -39,9 +85,14 @@ class RAGEngine:
         if department:
             dense_stmt = dense_stmt.where(Document.department == department)
 
+        # Lexical search combines original + translated keywords
+        lexical_query = query
+        if translated_query != query:
+            lexical_query = f"{query} {translated_query}"
+
         # Sparse Query definition: Lexical FTS match joining parent context
         tsvector_col = func.to_tsvector('simple', DocumentChunk.content)
-        tsquery_col = func.plainto_tsquery('simple', query)
+        tsquery_col = func.plainto_tsquery('simple', lexical_query)
         lexical_score = func.ts_rank(tsvector_col, tsquery_col).label("score")
         
         sparse_stmt = (
