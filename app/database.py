@@ -29,6 +29,11 @@ async def init_db():
                     ALTER TABLE document_chunks 
                     ADD COLUMN IF NOT EXISTS parent_chunk_id UUID REFERENCES document_parent_chunks(id) ON DELETE CASCADE;
                 """))
+                # Ensure file_hash column is added to documents table if not present
+                await conn.execute(text("""
+                    ALTER TABLE documents 
+                    ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64) UNIQUE;
+                """))
                 # Create HNSW index for high performance vector retrieval
                 await conn.execute(text("""
                     CREATE INDEX IF NOT EXISTS chunk_embeddings_hnsw_idx 

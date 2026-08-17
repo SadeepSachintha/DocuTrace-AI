@@ -15,6 +15,7 @@ class Document(Base):
     department = Column(String(100), index=True, nullable=False)
     language = Column(String(10), nullable=False)
     total_pages = Column(Integer, nullable=False)
+    file_hash = Column(String(64), unique=True, index=True, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class DocumentParentChunk(Base):
