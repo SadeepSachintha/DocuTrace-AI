@@ -1,5 +1,6 @@
+import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, text
+from sqlalchemy import select, and_, text, func
 from openai import AsyncOpenAI
 from app.models import DocumentChunk, Document
 from app.services.embedding_service import embedding_service
@@ -17,12 +18,12 @@ class RAGEngine:
         department: str | None = None, 
         top_k: int = 4
     ) -> List[Dict[str, Any]]:
+        # 1. Generate query embedding for dense search
         query_vector = embedding_service.generate_query_embedding(query)
         
-        # pgvector cosine similarity operator: <=> (Cosine distance)
+        # Dense Query definition: Cosine similarity search using pgvector
         distance_col = DocumentChunk.embedding.cosine_distance(query_vector).label("distance")
-        
-        stmt = (
+        dense_stmt = (
             select(
                 DocumentChunk.content,
                 DocumentChunk.page_number,
@@ -31,24 +32,96 @@ class RAGEngine:
             )
             .join(Document, DocumentChunk.document_id == Document.id)
             .order_by(distance_col)
-            .limit(top_k)
+            .limit(top_k * 2) # Fetch extra candidates for fusion
         )
-        
         if department:
-            stmt = stmt.where(Document.department == department)
+            dense_stmt = dense_stmt.where(Document.department == department)
 
-        result = await db.execute(stmt)
-        rows = result.all()
+        # Sparse Query definition: Lexical match search using full-text TSQuery
+        tsvector_col = func.to_tsvector('simple', DocumentChunk.content)
+        tsquery_col = func.plainto_tsquery('simple', query)
+        lexical_score = func.ts_rank(tsvector_col, tsquery_col).label("score")
         
-        retrieved = []
-        for row in rows:
+        sparse_stmt = (
+            select(
+                DocumentChunk.content,
+                DocumentChunk.page_number,
+                Document.filename,
+                lexical_score
+            )
+            .join(Document, DocumentChunk.document_id == Document.id)
+            .where(tsvector_col.op('@@')(tsquery_col))
+            .order_by(lexical_score.desc())
+            .limit(top_k * 2) # Fetch extra candidates for fusion
+        )
+        if department:
+            sparse_stmt = sparse_stmt.where(Document.department == department)
+
+        # Execute both searches concurrently
+        dense_task = db.execute(dense_stmt)
+        sparse_task = db.execute(sparse_stmt)
+        
+        try:
+            dense_res, sparse_res = await asyncio.gather(dense_task, sparse_task)
+            dense_rows = dense_res.all()
+            sparse_rows = sparse_res.all()
+        except Exception as e:
+            # Safe fallback if full-text index query fails or is not supported
+            print(f"Sparse search lookup failed: {e}. Falling back to dense-only retrieval.")
+            fallback_res = await db.execute(dense_stmt.limit(top_k))
+            dense_rows = fallback_res.all()
+            sparse_rows = []
+
+        # Reciprocal Rank Fusion (RRF) implementation
+        rrf_scores = {}
+        candidate_data = {}
+        k = 60 # RRF fusion constant
+
+        # Parse dense results and assign RRF ranks
+        for rank, row in enumerate(dense_rows):
             content, page, filename, dist = row
+            key = (filename, page, content)
+            
+            if key not in rrf_scores:
+                rrf_scores[key] = 0.0
+                candidate_data[key] = {
+                    "filename": filename,
+                    "page": page,
+                    "content": content,
+                    "base_score": float(1 - dist)
+                }
+            rrf_scores[key] += 1.0 / (k + (rank + 1))
+
+        # Parse sparse results and accumulate RRF ranks
+        for rank, row in enumerate(sparse_rows):
+            content, page, filename, lex_score = row
+            key = (filename, page, content)
+            
+            if key not in rrf_scores:
+                rrf_scores[key] = 0.0
+                candidate_data[key] = {
+                    "filename": filename,
+                    "page": page,
+                    "content": content,
+                    # Fallback base score for purely lexical matches
+                    "base_score": 0.5
+                }
+            rrf_scores[key] += 1.0 / (k + (rank + 1))
+
+        # Sort all unique candidates based on their combined RRF score descending
+        sorted_keys = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
+
+        retrieved = []
+        for key in sorted_keys[:top_k]:
+            data = candidate_data[key]
             retrieved.append({
-                "filename": filename,
-                "page": page,
-                "content": content,
-                "score": float(1 - dist) # Convert distance to cosine similarity
+                "filename": data["filename"],
+                "page": data["page"],
+                "content": data["content"],
+                # We return the RRF score rounded for verification
+                "score": round(rrf_scores[key], 4)
             })
+
         return retrieved
 
     @staticmethod

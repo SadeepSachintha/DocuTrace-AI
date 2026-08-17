@@ -30,6 +30,12 @@ async def init_db():
                     ON document_chunks 
                     USING hnsw (embedding vector_cosine_ops);
                 """))
+                # Create GIN index for lexical search
+                await conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS chunk_content_fts_idx 
+                    ON document_chunks 
+                    USING gin (to_tsvector('simple', content));
+                """))
             print("Successfully initialized database extension, tables, and indices.")
             return
         except (OperationalError, InterfaceError) as e:
