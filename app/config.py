@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 768
     ENABLE_HYDE: bool = True
     ENABLE_TRANSLATION: bool = True
+    ENABLE_RERANKER: bool = True
+    CROSS_ENCODER_MODEL_NAME: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
     class Config:
         env_file = ".env"

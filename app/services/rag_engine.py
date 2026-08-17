@@ -67,6 +67,9 @@ class RAGEngine:
         # Generate query embedding on the expanded/translated text
         query_vector = embedding_service.generate_query_embedding(search_text)
         
+        # Determine query candidate limits based on whether reranking is active
+        search_limit = top_k * 4 if settings.ENABLE_RERANKER else top_k * 2
+        
         # Dense Query definition: Cosine similarity search joining parent context
         distance_col = DocumentChunk.embedding.cosine_distance(query_vector).label("distance")
         dense_stmt = (
@@ -80,7 +83,7 @@ class RAGEngine:
             .join(Document, DocumentChunk.document_id == Document.id)
             .outerjoin(DocumentParentChunk, DocumentChunk.parent_chunk_id == DocumentParentChunk.id)
             .order_by(distance_col)
-            .limit(top_k * 2) # Fetch extra candidates for fusion
+            .limit(search_limit)
         )
         if department:
             dense_stmt = dense_stmt.where(Document.department == department)
@@ -107,7 +110,7 @@ class RAGEngine:
             .outerjoin(DocumentParentChunk, DocumentChunk.parent_chunk_id == DocumentParentChunk.id)
             .where(tsvector_col.op('@@')(tsquery_col))
             .order_by(lexical_score.desc())
-            .limit(top_k * 2) # Fetch extra candidates for fusion
+            .limit(search_limit)
         )
         if department:
             sparse_stmt = sparse_stmt.where(Document.department == department)
@@ -167,8 +170,11 @@ class RAGEngine:
         # Sort all unique candidates based on their combined RRF score descending
         sorted_keys = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
 
+        # Retrieve a wider pool if re-ranking, else retrieve top_k directly
+        rrf_pool_limit = top_k * 3 if settings.ENABLE_RERANKER else top_k
+
         retrieved = []
-        for key in sorted_keys[:top_k]:
+        for key in sorted_keys[:rrf_pool_limit]:
             data = candidate_data[key]
             retrieved.append({
                 "filename": data["filename"],
@@ -178,6 +184,11 @@ class RAGEngine:
                 # We return the RRF score rounded for verification
                 "score": round(rrf_scores[key], 4)
             })
+
+        # Apply Cross-Encoder re-ranking if active
+        if settings.ENABLE_RERANKER:
+            from app.services.reranker_service import reranker_service
+            retrieved = reranker_service.rerank(query, retrieved, top_n=top_k)
 
         return retrieved
 
