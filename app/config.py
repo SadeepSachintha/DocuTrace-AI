@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     ENABLE_TRANSLATION: bool = True
     ENABLE_RERANKER: bool = True
     CROSS_ENCODER_MODEL_NAME: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    LANGFUSE_PUBLIC_KEY: str | None = None
+    LANGFUSE_SECRET_KEY: str | None = None
+    LANGFUSE_HOST: str = "https://cloud.langfuse.com"
 
     class Config:
         env_file = ".env"
