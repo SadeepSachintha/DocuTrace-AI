@@ -242,3 +242,32 @@ class RAGEngine:
                 + "\n".join([f"- {c['content'][:150]}..." for c in context_chunks])
                 + f"\n\nSources: {citation_refs}"
             )
+
+    @staticmethod
+    async def condense_question(chat_history: str, query: str) -> str:
+        is_mock_key = not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY.startswith("mock")
+        if is_mock_key:
+            return query
+            
+        sys_prompt = (
+            "Given the following chat history and a follow-up question, rephrase the follow-up question "
+            "to be a standalone question, in its original language, that contains all necessary context from the chat history. "
+            "Do not answer the question, just return the standalone, rephrased question."
+        )
+        user_content = f"Chat History:\n{chat_history}\n\nFollow-up Question: {query}\nStandalone Question:"
+        
+        try:
+            response = await openai_client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                temperature=0.0
+            )
+            condensed = response.choices[0].message.content.strip()
+            print(f"Condensed query '{query}' -> '{condensed}'")
+            return condensed
+        except Exception as e:
+            print(f"Failed to condense question: {e}")
+            return query

@@ -584,6 +584,7 @@
                 <div class="active-badges">
                     <div class="badge"><i data-lucide="shield-check" size="14"></i> Grounded</div>
                     <div class="badge"><i data-lucide="zap" size="14"></i> Hybrid Ranker</div>
+                    <button class="badge" id="new-chat-btn" style="cursor: pointer; background: rgba(124, 58, 237, 0.15); border-color: rgba(124, 58, 237, 0.4); color: #c084fc; outline: none; transition: all 0.3s;"><i data-lucide="plus-circle" size="14"></i> New Chat</button>
                 </div>
             </div>
 
@@ -625,8 +626,10 @@
         const chatInput = document.getElementById('chat-input');
         const sendBtn = document.getElementById('send-btn');
         const chatMessages = document.getElementById('chat-messages');
+        const newChatBtn = document.getElementById('new-chat-btn');
 
         let selectedFile = null;
+        let currentSessionId = null;
 
         // Ingestion Events
         dropZone.addEventListener('click', () => fileInput.click());
@@ -726,6 +729,19 @@
             }
         });
 
+        newChatBtn.addEventListener('click', () => {
+            currentSessionId = null;
+            chatMessages.innerHTML = `
+                <div class="message assistant">
+                    <div class="avatar"><i data-lucide="bot" size="20"></i></div>
+                    <div class="message-bubble">
+                        Hello! I am your DocuTrace AI assistant. Upload your company policy documents in the left sidebar, specify their department context, and query me in any language (English, Tamil, Sinhala) to fetch verified grounded answers.
+                    </div>
+                </div>
+            `;
+            lucide.createIcons();
+        });
+
         chatInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && chatInput.value.trim().length > 0) {
                 triggerQuery();
@@ -756,7 +772,8 @@
                     body: JSON.stringify({
                         query: queryText,
                         department: deptSelect.value,
-                        similarity_top_k: 3
+                        similarity_top_k: 3,
+                        session_id: currentSessionId
                     })
                 });
 
@@ -764,6 +781,7 @@
 
                 if (response.ok) {
                     const data = await response.json();
+                    currentSessionId = data.session_id;
                     appendMessage('assistant', data.answer, data.sources);
                 } else {
                     const errText = await response.text();

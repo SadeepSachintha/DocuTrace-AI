@@ -13,6 +13,7 @@ class QueryRequest(BaseModel):
     query: str
     department: Optional[str] = None
     similarity_top_k: int = 4
+    session_id: Optional[UUID] = None
 
 class CitationSource(BaseModel):
     document_name: str
@@ -23,3 +24,4 @@ class CitationSource(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     sources: List[CitationSource]
+    session_id: UUID

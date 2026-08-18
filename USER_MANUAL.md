@@ -2,14 +2,14 @@
 
 Welcome to **DocuTrace AI**, a state-of-the-art multilingual corporate document search and question-answering assistant, built and designed by **[SS Labz](https://ss-labz.pages.dev/)**.
 
-DocuTrace AI utilizes hybrid semantic retrieval, layout table parsing, query translation, and parent-child document chunking to extract grounded answers from corporate policy documents in multiple languages (English, Sinhala, Tamil) while completely preventing hallucinations.
+DocuTrace AI utilizes hybrid semantic retrieval, layout table parsing, query translation, parent-child document chunking, and conversational chat history memory to extract grounded answers from corporate policy documents in multiple languages (English, Sinhala, Tamil).
 
 ---
 
 ## 1. Getting Started
 
 ### Accessing the Dashboard
-1. Ensure the backend FastAPI server and database containers are running.
+1. Ensure the database container and FastAPI server are running.
 2. Open your web browser and navigate to:
    👉 **[http://localhost:8008/](http://localhost:8008/)**
 3. You will be greeted by the dark-mode glassmorphic dashboard interface.
@@ -30,23 +30,24 @@ To ask questions about a policy, you must first ingest the document into the sys
    - Click the **"Upload Policy"** button.
    - Monitor the progress box in the sidebar:
      - **Processing**: The system splits text page-by-page, extracts tables, and calculates dense E5 vector embeddings.
-     - **Complete**: A green checkmark confirms indexing success, logging the detected document language and total child chunks saved.
+     - **Complete**: A green checkmark confirms indexing success.
+     - **De-duplication**: If an identical document has already been ingested, a blue checkmark states `Re-used existing index`, saving time and compute resources.
 
 ---
 
-## 3. Querying the Assistant
+## 3. Querying & Conversational Memory
 
-DocuTrace AI allows you to query policy databases using natural conversational language.
+DocuTrace AI allows you to query policy databases using natural conversational language and hold ongoing multi-turn conversations.
 
-1. **Enter Query**:
-   - Locate the chat input box at the bottom-right of the dashboard.
-   - Type your question (e.g. `"What is the annual leave carryover policy?"` or `"Maternity leave සඳහා හිමිවන දින ගණන කීයද?"`).
-2. **Retrieve & Synthesize**:
-   - Press **Enter** or click the **Send** button.
-   - A pulsing bubble indicator will appear while the assistant executes language detection, translation (to align Tamil/Sinhala queries to English documents), HyDE query expansion, database retrieval, Cross-Encoder scoring, and LLM synthesis.
-3. **Read Grounded Answers**:
-   - The assistant returns a concise answer completely grounded in the source text.
-   - The answer includes inline citations [e.g. `(HR_Policy.pdf, p. 2)`] to verify where the information is located.
+1. **Ask Initial Question**:
+   - Type your question in the chat input box at the bottom-right (e.g. `"What is the annual leave carryover policy?"`).
+   - The assistant returns the grounded answer with source citations.
+2. **Ask Follow-up Questions**:
+   - You can ask follow-up questions referencing previous answers without repeating context (e.g. `"How do I request an exception to it?"` or `"Is there a limit on this?"`).
+   - The assistant automatically merges your previous chat history and the new question using the LLM to generate a standalone query before executing database retrieval.
+3. **Start a New Chat**:
+   - Click the **"New Chat"** button inside the header bar next to the badges.
+   - This resets your thread ID (`session_id = null`) and clears the message log, allowing you to start a fresh topic.
 
 ---
 
