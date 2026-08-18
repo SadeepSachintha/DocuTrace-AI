@@ -11,13 +11,21 @@ from typing import List, Dict, Any
 # Initialize OpenAI client. We can handle invalid keys gracefully during query execution.
 openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
+ROLE_PERMISSIONS = {
+    "admin": ["HR", "Finance", "Operations", "Security"],
+    "hr_staff": ["HR", "Operations"],
+    "finance_staff": ["Finance", "Operations"],
+    "regular_user": ["Operations"]
+}
+
 class RAGEngine:
     @staticmethod
     async def retrieve_similar_chunks(
         db: AsyncSession, 
         query: str, 
         department: str | None = None, 
-        top_k: int = 4
+        top_k: int = 4,
+        role: str = "regular_user"
     ) -> List[Dict[str, Any]]:
         # Detect query language
         try:
@@ -85,8 +93,16 @@ class RAGEngine:
             .order_by(distance_col)
             .limit(search_limit)
         )
+        # Resolve allowed departments for Role
+        allowed_depts = ROLE_PERMISSIONS.get(role, ["Operations"])
         if department:
-            dense_stmt = dense_stmt.where(Document.department == department)
+            if department not in allowed_depts:
+                raise ValueError(f"Role '{role}' is not authorized to access department '{department}'.")
+            depts_to_search = [department]
+        else:
+            depts_to_search = allowed_depts
+
+        dense_stmt = dense_stmt.where(Document.department.in_(depts_to_search))
 
         # Lexical search combines original + translated keywords
         lexical_query = query
@@ -112,8 +128,7 @@ class RAGEngine:
             .order_by(lexical_score.desc())
             .limit(search_limit)
         )
-        if department:
-            sparse_stmt = sparse_stmt.where(Document.department == department)
+        sparse_stmt = sparse_stmt.where(Document.department.in_(depts_to_search))
 
         # Execute both searches concurrently
         dense_task = db.execute(dense_stmt)

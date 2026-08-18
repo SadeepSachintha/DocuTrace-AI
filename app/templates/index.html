@@ -550,6 +550,16 @@
                 </select>
             </div>
 
+            <div class="form-group">
+                <label class="form-label" for="role-select">Simulate User Role</label>
+                <select class="select-input" id="role-select">
+                    <option value="regular_user">Regular User (Operations only)</option>
+                    <option value="hr_staff">HR Staff (HR, Operations)</option>
+                    <option value="finance_staff">Finance Staff (Finance, Operations)</option>
+                    <option value="admin">Administrator (All Departments)</option>
+                </select>
+            </div>
+
             <button class="btn" id="upload-btn" disabled>
                 <i data-lucide="sparkles" size="18"></i>
                 Upload Policy
@@ -627,6 +637,7 @@
         const sendBtn = document.getElementById('send-btn');
         const chatMessages = document.getElementById('chat-messages');
         const newChatBtn = document.getElementById('new-chat-btn');
+        const roleSelect = document.getElementById('role-select');
 
         let selectedFile = null;
         let currentSessionId = null;
@@ -773,7 +784,8 @@
                         query: queryText,
                         department: deptSelect.value,
                         similarity_top_k: 3,
-                        session_id: currentSessionId
+                        session_id: currentSessionId,
+                        role: roleSelect.value
                     })
                 });
 
@@ -785,7 +797,12 @@
                     appendMessage('assistant', data.answer, data.sources);
                 } else {
                     const errText = await response.text();
-                    appendMessage('assistant', `Failed to query RAG engine: ${errText}`);
+                    let errMsg = errText;
+                    try {
+                        const errJson = JSON.parse(errText);
+                        errMsg = errJson.detail || errText;
+                    } catch(e) {}
+                    appendMessage('assistant', `Authorization Error: ${errMsg}`);
                 }
             } catch (error) {
                 removeLoader(loaderId);

@@ -1,5 +1,5 @@
 import uuid
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -67,12 +67,20 @@ async def query_rag_assistant(
             input={"query": search_query, "department": request.department, "top_k": request.similarity_top_k}
         )
 
-    retrieved_chunks = await RAGEngine.retrieve_similar_chunks(
-        db=db,
-        query=search_query,
-        department=request.department,
-        top_k=request.similarity_top_k
-    )
+    try:
+        retrieved_chunks = await RAGEngine.retrieve_similar_chunks(
+            db=db,
+            query=search_query,
+            department=request.department,
+            top_k=request.similarity_top_k,
+            role=request.role
+        )
+    except ValueError as e:
+        if retrieval_span:
+            retrieval_span.end(output={"error": str(e)})
+        if trace:
+            trace.end(output={"error": str(e)})
+        raise HTTPException(status_code=403, detail=str(e))
 
     if retrieval_span:
         retrieval_span.end(
