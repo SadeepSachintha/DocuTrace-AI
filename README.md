@@ -6,9 +6,9 @@ Developed and branded as a product of **[SS Labz](https://ss-labz.pages.dev/)**,
 
 ---
 
-## Enhanced Architecture & Pipeline
+### Enhanced Architecture & Pipeline
 
-The retrieval pipeline consists of 6 key phases to optimize relevance and cross-lingual compliance:
+The retrieval and document processing pipeline consists of 15 key phases to optimize relevance, speed, compliance, and user accessibility:
 
 ```text
                                   [ Client UI / Mobile ]
@@ -20,6 +20,7 @@ The retrieval pipeline consists of 6 key phases to optimize relevance and cross-
                              │  - Auth & Metadata Filters    │
                              │  - Lang Detection & Chunker   │
                              │  - Vector Retrieval Engine    │
+                             │  - Persisted Chat Sessions    │
                              └───────────────┬───────────────┘
                                              │
                        ┌─────────────────────┴─────────────────────┐
@@ -29,20 +30,26 @@ The retrieval pipeline consists of 6 key phases to optimize relevance and cross-
            │  - Port 5433          │                   │  - multilingual-e5    │
            │  - HNSW Dense Index   │                   │  - MiniLM-L-6-v2      │
            │  - FTS Simple Index   │                   │    Cross-Encoder      │
-           │  - RRF Fusion Stage   │                   │  - OpenAI GPT-4o-mini │
+           │  - Chat History DB    │                   │  - OpenAI GPT-4o-mini │
            └───────────────────────┘                   └───────────────────────┘
 ```
 
-1. **Multi-Modal Layout Ingestion**: Extracts text using `PyMuPDF` and executes page-level table grid detection (`page.find_tables()`). Discovered tables are formatted into structured GFM Markdown and appended to the text context. Empty or scanned visual pages are tagged with placeholders (e.g. `[Scanned Visual Page...]`) rather than skipped.
-2. **Hierarchical (Parent-Child) Chunking**: Page contents are saved as `DocumentParentChunk` nodes. Then, pages are split into smaller overlapping child chunks (150 words, 30 words overlap) which are embedded using the `intfloat/multilingual-e5-base` model.
-3. **Query Pre-processing (HyDE & Translation)**:
+1. **Smart Ingestion De-duplication**: Computes SHA-256 hashes of PDF files. If the hash matches an existing document, it re-uses the metadata and skips indexing, saving compute. If the content changes but the filename matches, it cascades delete old chunks and re-indexes.
+2. **Multi-Modal Layout Ingestion**: Extracts text using `PyMuPDF` and executes page-level table grid detection (`page.find_tables()`). Discovered tables are formatted into structured GFM Markdown and appended to the text context.
+3. **Hierarchical (Parent-Child) Chunking**: Page contents are saved as `DocumentParentChunk` nodes. Then, pages are split into smaller overlapping child chunks (150 words, 30 words overlap) which are embedded using the `intfloat/multilingual-e5-base` model.
+4. **Query Pre-processing (HyDE & Translation)**:
    - Identifies query script language using `langdetect`.
    - Translates non-English queries (Sinhala/Tamil) to English using OpenAI.
    - Generates a hypothetical paragraph answer (HyDE) using the LLM for optimized passage alignment.
-4. **Hybrid Retrieval**: Queries the database using the hypothetical answer embedding for pgvector cosine similarity, while concurrently executing full-text lexical matches (GIN indexing) on the combined string of the original + translated query.
-5. **Reciprocal Rank Fusion (RRF)**: Merges dense and sparse candidates to rank them based on combined rank values.
-6. **Cross-Encoder Re-ranking**: Scores the top 12 RRF candidates using a lightweight Cross-Encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`) on CPU/CUDA, selecting only the top 3-4 highly relevant chunks.
-7. **Context Synthesis & Tracing**: Synthesizes the final response using parent page context blocks and logs tracing events asynchronously to Langfuse.
+5. **Hybrid Retrieval**: Queries the database using the hypothetical answer embedding for pgvector cosine similarity, while concurrently executing full-text lexical matches (GIN indexing) on the combined string of the original + translated query.
+6. **Reciprocal Rank Fusion (RRF)**: Merges dense and sparse candidates to rank them based on combined rank values.
+7. **Cross-Encoder Re-ranking**: Scores the top 12 RRF candidates using a lightweight Cross-Encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`) on CPU/CUDA, selecting only the top 3-4 highly relevant chunks.
+8. **Visual RAG (Vision-Language Processing)**: If a page has drawings, diagrams, or charts, it renders the page to 150 DPI PNG bytes, base64 encodes it, and queries GPT-4o-mini Vision to get detailed text descriptions, appending it to context chunks.
+9. **Role-Based Access Control (RBAC)**: Checks simulated user roles (`admin`, `hr_staff`, `finance_staff`, `regular_user`) against allowed department scopes. Returns `403 Forbidden` on access violations and implicitly filters multi-department query results.
+10. **Metadata Filtering**: Constraints retrieval SQL queries to filter by unique `filename` strings or upload dates (`days_ago` cutoff date comparing).
+11. **Conversational Memory**: Stores message histories in database logs. Condenses multi-turn questions containing reference pronouns ("it", "they") into standalone questions.
+12. **Markdown Report Export**: Compiles dialogue histories and cited document sources into downloadable Markdown report assets on-the-fly.
+13. **RAG Observability & Evaluation**: Integrates Langfuse tracing spans (retrieval and generation metrics) and runs automated score runs evaluating precision, recall, and answer faithfulness.
 
 ---
 
@@ -51,22 +58,6 @@ The retrieval pipeline consists of 6 key phases to optimize relevance and cross-
 ```text
 rag-assistant/
 ├── app/
-│   ├── __init__.py
-│   ├── config.py              # Configuration settings (HyDE, Reranker, Langfuse)
-│   ├── database.py            # Async engine, session, table and index creation
-│   ├── models.py              # SQLAlchemy tables (Parent & Child Chunks)
-│   ├── schemas.py             # Pydantic schemas (Query & Ingestion payloads)
-│   ├── services/
-│   │   ├── __init__.py
-│   │   ├── document_parser.py # PDF layout table parser and child splitter
-│   │   ├── embedding_service.py # Vector embedding generator (multilingual-e5)
-│   │   ├── reranker_service.py # BGE/MiniLM Cross-Encoder re-ranker
-│   │   ├── observability.py   # Langfuse Tracing initialization client
-│   │   └── rag_engine.py      # Pre-processing, hybrid RRF, and synthesis
-│   └── routes/
-│       ├── __init__.py
-│       ├── documents.py       # PDF document upload (Page parent & child link)
-│       └── chat.py            # RAG query routes with Langfuse span tracing
 ├── app/templates/
 │   └── index.html             # Premium User interface HTML dashboard
 ├── USER_MANUAL.md             # End-user guide for dashboard features
@@ -74,7 +65,20 @@ rag-assistant/
 ├── docker-compose.yml         # PostgreSQL + pgvector (Port 5433)
 ├── requirements.txt           # Python application dependencies
 ├── .env                       # Environment configuration details
-└── main.py                    # Gateway application entrypoint (Port 8008)
+├── main.py                    # Gateway application entrypoint (Port 8008)
+└── scratch/                   # Verification test scripts
+    ├── test_hybrid.py         # Lexical sparse vs vector dense RRF verification
+    ├── test_parent_child.py   # Hierarchical parent chunk retrieval verification
+    ├── test_query_expansion.py # Script detection and query translation verification
+    ├── test_table_parsing.py  # Markdown table extraction verification
+    ├── test_observability.py  # Langfuse tracing verification
+    ├── test_de_duplication.py # Byte-hash de-duplication and overwrite verification
+    ├── test_memory.py         # Thread history memory re-contextualization verification
+    ├── test_rbac.py           # Role permission and implicit tenant filtering verification
+    ├── test_visual_rag.py     # Vision-Language page graphic captioning verification
+    ├── test_filters.py        # Filename metadata scope filtering verification
+    ├── test_export.py         # Markdown report download verification
+    └── test_evaluation.py     # Automated Context precision & faithfulness evaluation
 ```
 
 ---
@@ -144,17 +148,13 @@ For more details on deploying and operating this product:
 
 ## Verification Test Scripts
 
-Five scratch verification scripts are provided under the `scratch/` directory to validate the RAG components:
-
-1. **`test_hybrid.py`**: Ingests a policy containing a unique serial ID `"B-77-Z"`. Queries for `"B-77-Z"` and verifies RRF retrieves the exact match lexical chunk despite low semantic vector scores.
-2. **`test_parent_child.py`**: Ingests a multiline document and queries for details. Verifies child chunks retrieve page-level parent chunks for synthesis while citations use child text snippets.
-3. **`test_query_expansion.py`**: Queries in Sinhala (`"ඩ්‍රෝන යානයේ..."`). Verifies cross-lingual script detection and retrieval success.
-4. **`test_table_parsing.py`**: Ingests drawn table grids, converts them to Markdown tables, and verifies that the assistant answers query details (e.g. Leave policy figures) correctly.
-5. **`test_observability.py`**: Verifies query runs smoothly without warnings when Langfuse is disabled or empty.
-
-Run test scripts via PowerShell:
+Run verification test scripts via PowerShell inside the root folder:
 ```powershell
-$env:PYTHONIOENCODING="utf-8"; .venv\Scripts\python "C:/Users/Sadeep/.gemini/antigravity-ide/brain/56b49822-3989-45f7-b663-c4e87459f622/scratch/test_table_parsing.py"
+# Set UTF-8 encoding environment variable
+$env:PYTHONIOENCODING="utf-8"
+
+# Example: Run the RAG evaluation suite
+.venv\Scripts\python "C:/Users/Sadeep/.gemini/antigravity-ide/brain/56b49822-3989-45f7-b663-c4e87459f622/scratch/test_evaluation.py"
 ```
 
 ---
