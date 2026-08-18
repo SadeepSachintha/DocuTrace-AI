@@ -34,6 +34,11 @@ async def init_db():
                     ALTER TABLE documents 
                     ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64) UNIQUE;
                 """))
+                # Ensure sources column is added to chat_messages table if not present
+                await conn.execute(text("""
+                    ALTER TABLE chat_messages 
+                    ADD COLUMN IF NOT EXISTS sources JSONB;
+                """))
                 # Create HNSW index for high performance vector retrieval
                 await conn.execute(text("""
                     CREATE INDEX IF NOT EXISTS chunk_embeddings_hnsw_idx 

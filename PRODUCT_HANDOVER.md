@@ -35,7 +35,16 @@ To support targeted document queries, the vector and full-text search SQL genera
 
 ---
 
-## 4. Database Models & Schema Specifications
+## 4. Export & Markdown Report Generator
+
+Allows exporting chat logs and source summaries into structured text deliverables:
+1. **Citation Persistence**: The `chat_messages` table stores JSON arrays containing the `sources` cited inside every assistant answer turn.
+2. **On-the-Fly Compiler Route**: Exposes `GET /rag/export/{session_id}` route to assemble chronological message dialogues, pages, relevance scores, and code blocks into standard GFM Markdown reports.
+3. **HTTP Response Headers**: Returns Markdown streams with `Content-Disposition: attachment; filename="chat_report_{session_id}.md"` headers to trigger native browser downloads.
+
+---
+
+## 5. Database Models & Schema Specifications
 
 The database contains the following tables:
 
@@ -43,11 +52,11 @@ The database contains the following tables:
 2. **`document_parent_chunks`**: Stores full page-level text segments (including injected Markdown tables and visual drawing summaries).
 3. **`document_chunks`**: Stores sub-page chunks, metadata tags, and dense vector embeddings.
 4. **`chat_sessions`**: Manages conversational message logs grouped by thread IDs.
-5. **`chat_messages`**: Stores multi-turn message history (`user` and `assistant` roles) referenced to `chat_sessions` with cascading deletes.
+5. **`chat_messages`**: Stores multi-turn message history (`user` and `assistant` roles) and computed `sources` referenced to `chat_sessions` with cascading deletes.
 
 ---
 
-## 5. Environment Configurations (`.env`)
+## 6. Environment Configurations (`.env`)
 
 Deploying the system requires setting up the following values in the `.env` file:
 
@@ -77,7 +86,7 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 
 ---
 
-## 6. Maintenance & Operational Monitoring
+## 7. Maintenance & Operational Monitoring
 
 ### Startup & Operations
 1. **Starting the database container**:
@@ -93,7 +102,7 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 
 ---
 
-## 7. Product Handoff Checklist
+## 8. Product Handoff Checklist
 
 Before concluding the handover, verify that:
 - [ ] Docker container is running and port `5433` is listening.
@@ -101,6 +110,7 @@ Before concluding the handover, verify that:
 - [ ] PDF document ingestion extracts Markdown tables and processes visual image captions.
 - [ ] simulated user role restrictions are successfully enforced.
 - [ ] Filename search scope filters and date range filters correctly isolate/exclude RAG search inputs.
+- [ ] Clicking "Export Report" downloads a complete, cited Markdown conversation log.
 
 ---
 

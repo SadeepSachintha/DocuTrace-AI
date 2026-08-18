@@ -2,7 +2,7 @@
 
 Welcome to **DocuTrace AI**, a state-of-the-art multilingual corporate document search and question-answering assistant, built and designed by **[SS Labz](https://ss-labz.pages.dev/)**.
 
-DocuTrace AI utilizes hybrid semantic retrieval, layout table parsing, query translation, parent-child document chunking, conversational chat history memory, role-based access security, vision-language processing, and advanced metadata search filters to extract grounded answers.
+DocuTrace AI utilizes hybrid semantic retrieval, layout table parsing, query translation, parent-child document chunking, conversational chat history memory, role-based access security, vision-language processing, advanced metadata search filters, and automatic Markdown report generation to extract grounded answers.
 
 ---
 
@@ -37,14 +37,9 @@ DocuTrace AI allows you to narrow your search to target specific files or ingest
 
 1. **Filter by File**:
    - The dropdown list dynamically loads the filename of every successfully ingested document.
-   - Select a specific filename to restrict retrieval matching to that document only (e.g. searching only within a project specifications PDF).
-   - Select **"Search All Files"** to perform a general search across your allowed database.
+   - Select a specific filename to restrict retrieval matching to that document only.
 2. **Filter by Date**:
-   - Select from the Date range filter to search documents indexed within:
-     - *Last 24 Hours*
-     - *Last 7 Days*
-     - *Last 30 Days*
-     - *Any Time* (No date restrictions)
+   - Select from the Date range filter to search documents indexed within the last 24 hours, 7 days, 30 days, or any time.
 
 ---
 
@@ -56,7 +51,22 @@ DocuTrace AI allows you to narrow your search to target specific files or ingest
 2. **Ask Follow-up Questions**:
    - You can ask follow-up questions referencing previous answers without repeating context (e.g. `"How do I request an exception to it?"`).
 3. **Start a New Chat**:
-   - Click the **"New Chat"** button inside the header bar next to the badges to start a fresh topic.
+   - Click the **"New Chat"** button inside the header bar to clear visual feeds and start a fresh conversation session.
+
+---
+
+## 5. Exporting Chat Reports
+
+DocuTrace AI enables users to download comprehensive conversational transcripts directly:
+
+1. Initiate a query to start an active conversation thread.
+2. Locate the green glowing **"Export Report"** button inside the dashboard header.
+3. Click **"Export Report"**.
+4. The system will compile the chat logs and save the downloadable Markdown report file (`chat_report_{session_id}.md`) to your local Downloads directory.
+5. The exported Markdown contains:
+   - Metadata stamps (Date, Session ID, SS Labz credentials).
+   - Entire transcript blocks (User and Assistant dialogues).
+   - Citation references lists (Document name, Page number, relevance score, matching content snippet) for every assistant response.
 
 ---
 

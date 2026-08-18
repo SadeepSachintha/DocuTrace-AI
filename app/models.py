@@ -50,4 +50,5 @@ class ChatMessage(Base):
     session_id = Column(UUID(as_uuid=True), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False)
     role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
+    sources = Column(JSONB, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
