@@ -50,7 +50,7 @@ async def upload_document(
         await db.flush() # Execute cascade deletes
 
     # 4. Extract content
-    pages_content, detected_lang, total_pages = DocumentParserService.extract_text_with_pages(file_bytes)
+    pages_content, detected_lang, total_pages = await DocumentParserService.extract_text_with_pages(file_bytes)
     if not pages_content:
         raise HTTPException(status_code=400, detail="No extractable text found in PDF.")
 

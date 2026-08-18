@@ -2,7 +2,7 @@
 
 Welcome to **DocuTrace AI**, a state-of-the-art multilingual corporate document search and question-answering assistant, built and designed by **[SS Labz](https://ss-labz.pages.dev/)**.
 
-DocuTrace AI utilizes hybrid semantic retrieval, layout table parsing, query translation, parent-child document chunking, and conversational chat history memory to extract grounded answers from corporate policy documents in multiple languages (English, Sinhala, Tamil).
+DocuTrace AI utilizes hybrid semantic retrieval, layout table parsing, query translation, parent-child document chunking, conversational chat history memory, role-based access security, and vision-language processing to extract grounded answers from corporate documents.
 
 ---
 
@@ -16,38 +16,35 @@ DocuTrace AI utilizes hybrid semantic retrieval, layout table parsing, query tra
 
 ---
 
-## 2. Ingesting Corporate Policies
+## 2. Ingesting Corporate Policies & Visual RAG
 
 To ask questions about a policy, you must first ingest the document into the system.
 
 1. **Select a File**:
-   - Drag and drop any corporate PDF policy document directly into the dotted upload area in the left sidebar.
-   - Alternatively, click on the upload area to open your local file browser and choose a PDF.
-2. **Assign Department Tag**:
-   - Select the target department context (e.g. *Human Resources*, *Finance*, *Operations*, or *Security*) from the dropdown list.
-   - This tag acts as a retrieval boundary, ensuring queries only search relevant departmental documents.
-3. **Trigger Ingestion**:
+   - Drag and drop any corporate PDF policy document directly into the upload area in the left sidebar.
+2. **Assign Department & User Role**:
+   - Select the target department context (e.g. *Human Resources*, *Finance*, *Operations*, or *Security*) from the dropdown.
+   - Select the active Simulated User Role (e.g. *regular_user*, *admin*) to restrict/permit retrieval based on access rights.
+3. **Multi-Modal / Visual Extraction (Visual RAG)**:
    - Click the **"Upload Policy"** button.
-   - Monitor the progress box in the sidebar:
-     - **Processing**: The system splits text page-by-page, extracts tables, and calculates dense E5 vector embeddings.
-     - **Complete**: A green checkmark confirms indexing success.
-     - **De-duplication**: If an identical document has already been ingested, a blue checkmark states `Re-used existing index`, saving time and compute resources.
+   - If a page has diagrams, drawings, charts, or is completely scanned (zero characters):
+     - The parser automatically renders the page into an image and sends it to the OpenAI Vision-Language API (`gpt-4o-mini`).
+     - The detailed textual summary of the visual contents (labels, figures, workflows) is generated and appended to the chunks, making drawings and charts fully searchable.
 
 ---
 
 ## 3. Querying & Conversational Memory
 
-DocuTrace AI allows you to query policy databases using natural conversational language and hold ongoing multi-turn conversations.
+DocuTrace AI allows you to query policy databases using natural conversational language.
 
 1. **Ask Initial Question**:
-   - Type your question in the chat input box at the bottom-right (e.g. `"What is the annual leave carryover policy?"`).
+   - Type your question in the chat input box at the bottom-right (e.g. `"What is the visual model code on the Technical Chart?"`).
    - The assistant returns the grounded answer with source citations.
 2. **Ask Follow-up Questions**:
-   - You can ask follow-up questions referencing previous answers without repeating context (e.g. `"How do I request an exception to it?"` or `"Is there a limit on this?"`).
-   - The assistant automatically merges your previous chat history and the new question using the LLM to generate a standalone query before executing database retrieval.
+   - You can ask follow-up questions referencing previous answers without repeating context (e.g. `"Is the basement safe during it?"`).
+   - The assistant automatically re-contextualizes the query before search.
 3. **Start a New Chat**:
-   - Click the **"New Chat"** button inside the header bar next to the badges.
-   - This resets your thread ID (`session_id = null`) and clears the message log, allowing you to start a fresh topic.
+   - Click the **"New Chat"** button inside the header bar next to the badges to start a fresh topic.
 
 ---
 
@@ -61,15 +58,6 @@ To ensure transparency and absolute truthfulness, DocuTrace AI includes an inter
    - **Document Info**: Source filename and page number.
    - **Relevance Score**: The computed Cross-Encoder score (or RRF score) indicating exact contextual match alignment.
    - **Exact Matching Snippet**: The precise child chunk segment where the keyword/concept matched.
-
----
-
-## 5. Troubleshooting & FAQ
-
-* **The upload progress is stuck**: Make sure your file is a valid PDF and the backend container is running. Large files may take slightly longer as the system downloads/runs transformer modules.
-* **Why does the answer start with "[MOCK Grounded Response]"?**: This means the OpenAI API Key in your environment is set to mock. The system will retrieve correct documents and print their summaries, but placeholder LLM answers are generated.
-* **Are scanned pages supported?**: Yes! Pages with zero characters containing graphics or images are automatically labeled with scanned layout tags so they are searchable.
-* **How are tables handled?**: Tables are parsed into standard Markdown formats, preserving column-row relationships so calculations/reconciliations in sheets are preserved.
 
 ---
 

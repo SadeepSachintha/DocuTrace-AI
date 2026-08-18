@@ -1,6 +1,11 @@
 import fitz  # PyMuPDF
+import base64
 from langdetect import detect
 from typing import List, Dict, Any, Tuple
+from openai import AsyncOpenAI
+from app.config import settings
+
+openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 class DocumentParserService:
     @staticmethod
@@ -18,7 +23,7 @@ class DocumentParserService:
         return "| " + " | ".join(headers) + " |\n| " + " | ".join(separator) + " |\n" + "\n".join(rows)
 
     @staticmethod
-    def extract_text_with_pages(pdf_bytes: bytes) -> Tuple[List[Dict[str, Any]], str, int]:
+    async def extract_text_with_pages(pdf_bytes: bytes) -> Tuple[List[Dict[str, Any]], str, int]:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         pages_content = []
         full_text_sample = ""
@@ -45,10 +50,51 @@ class DocumentParserService:
             except Exception as te:
                 print(f"Failed to extract table on page {page_num+1}: {te}")
             
+            # Vision analysis for pages containing drawings or images (or completely empty of text)
+            images = page.get_images()
+            drawings = page.get_drawings()
+            is_mock_key = not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY.startswith("mock")
+            
+            if (images or drawings or not text) and not is_mock_key:
+                try:
+                    print(f"Rendering visual contents of page {page_num+1} for Vision analysis...")
+                    pix = page.get_pixmap(dpi=150)
+                    img_bytes = pix.tobytes("png")
+                    base64_image = base64.b64encode(img_bytes).decode('utf-8')
+                    
+                    sys_prompt = (
+                        "Describe any charts, diagrams, drawings, flowcharts, or visual graphics on this page in detail. "
+                        "Focus on corporate details, labels, figures, and relationships so it is searchable. "
+                        "If there are no drawings or charts, return an empty string."
+                    )
+                    
+                    response = await openai_client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": sys_prompt},
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/png;base64,{base64_image}"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        max_tokens=500
+                    )
+                    visual_desc = response.choices[0].message.content.strip()
+                    if visual_desc:
+                        text = f"{text}\n\n### Extracted Visual Content Description:\n{visual_desc}".strip()
+                        print(f"Page {page_num+1} visual analysis completed successfully.")
+                except Exception as ve:
+                    print(f"Failed vision analysis on page {page_num+1}: {ve}")
+            
             # Check for scanned page placeholders if no text is found
             if not text:
-                images = page.get_images()
-                drawings = page.get_drawings()
                 if images or drawings:
                     text = f"[Scanned Visual Page - Containing {len(images)} images and visual drawings]"
 
