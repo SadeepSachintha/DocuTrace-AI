@@ -1,4 +1,6 @@
+import hashlib
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Document, DocumentChunk, DocumentParentChunk
@@ -18,23 +20,53 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="Only PDF documents are currently supported.")
 
     file_bytes = await file.read()
-    pages_content, detected_lang, total_pages = DocumentParserService.extract_text_with_pages(file_bytes)
     
+    # 1. Compute file hash
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    
+    # 2. Check for identical content de-duplication
+    existing_stmt = select(Document).where(Document.file_hash == file_hash)
+    existing_res = await db.execute(existing_stmt)
+    existing_doc = existing_res.scalar_one_or_none()
+    
+    if existing_doc:
+        print(f"File upload '{file.filename}' hash matched existing document ID '{existing_doc.id}'. Skipping ingestion (De-duplicated).")
+        return DocumentUploadResponse(
+            document_id=existing_doc.id,
+            filename=existing_doc.filename,
+            chunks_indexed=0,
+            detected_language=existing_doc.language,
+            de_duplicated=True
+        )
+
+    # 3. Check for same filename update sync
+    dup_stmt = select(Document).where(Document.filename == file.filename)
+    dup_res = await db.execute(dup_stmt)
+    dup_docs = dup_res.scalars().all()
+    if dup_docs:
+        print(f"Found {len(dup_docs)} existing document(s) with filename '{file.filename}'. Syncing: deleting old record(s)...")
+        for doc in dup_docs:
+            await db.delete(doc)
+        await db.flush() # Execute cascade deletes
+
+    # 4. Extract content
+    pages_content, detected_lang, total_pages = DocumentParserService.extract_text_with_pages(file_bytes)
     if not pages_content:
         raise HTTPException(status_code=400, detail="No extractable text found in PDF.")
 
-    # 1. Create Document Record
+    # 5. Create Document Record
     doc_record = Document(
         filename=file.filename,
         content_type=file.content_type or "application/pdf",
         department=department,
         language=detected_lang,
-        total_pages=total_pages
+        total_pages=total_pages,
+        file_hash=file_hash
     )
     db.add(doc_record)
     await db.flush()
 
-    # 2. Store Parent Chunks (Full Pages)
+    # 6. Store Parent Chunks (Full Pages)
     parent_chunk_objects = []
     parent_map = {} # Maps page_number to parent_chunk_id
     for idx, page_data in enumerate(pages_content):
@@ -47,13 +79,13 @@ async def upload_document(
         parent_chunk_objects.append(parent_obj)
         db.add(parent_obj)
     
-    await db.flush() # Flushes parent chunks to assign auto-generated UUIDs
+    await db.flush()
 
     # Build mapping from page_number to parent chunk ID
     for parent_obj in parent_chunk_objects:
         parent_map[parent_obj.page_number] = parent_obj.id
 
-    # 3. Chunk Text to Children & Embed
+    # 7. Chunk Text to Children & Embed
     child_chunks = DocumentParserService.chunk_text(pages_content, chunk_size=150, chunk_overlap=30)
     raw_texts = [c["content"] for c in child_chunks]
     embeddings = embedding_service.generate_passage_embeddings(raw_texts)
@@ -80,5 +112,6 @@ async def upload_document(
         document_id=doc_record.id,
         filename=doc_record.filename,
         chunks_indexed=len(chunk_objects),
-        detected_language=detected_lang
+        detected_language=detected_lang,
+        de_duplicated=False
     )

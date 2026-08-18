@@ -7,6 +7,7 @@ class DocumentUploadResponse(BaseModel):
     filename: str
     chunks_indexed: int
     detected_language: str
+    de_duplicated: bool = False
 
 class QueryRequest(BaseModel):
     query: str

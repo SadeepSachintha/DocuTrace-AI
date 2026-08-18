@@ -691,8 +691,13 @@
                 if (response.ok) {
                     const data = await response.json();
                     progressFill.style.width = '100%';
-                    statusText.innerText = `Success! Indexed ${data.chunks_indexed} child chunks (Lang: ${data.detected_language}).`;
-                    statusHeader.innerHTML = '<i data-lucide="check-circle" style="color: #10b981;" size="16"></i> <span style="color: #10b981;">Ingestion Complete</span>';
+                    if (data.de_duplicated) {
+                        statusText.innerText = `Re-used existing index (De-duplicated document).`;
+                        statusHeader.innerHTML = '<i data-lucide="check-circle" style="color: #60a5fa;" size="16"></i> <span style="color: #60a5fa;">De-duplicated</span>';
+                    } else {
+                        statusText.innerText = `Success! Indexed ${data.chunks_indexed} child chunks (Lang: ${data.detected_language}).`;
+                        statusHeader.innerHTML = '<i data-lucide="check-circle" style="color: #10b981;" size="16"></i> <span style="color: #10b981;">Ingestion Complete</span>';
+                    }
                     lucide.createIcons();
                     
                     // Reset selected file
