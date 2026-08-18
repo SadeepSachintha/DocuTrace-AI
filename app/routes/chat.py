@@ -73,7 +73,9 @@ async def query_rag_assistant(
             query=search_query,
             department=request.department,
             top_k=request.similarity_top_k,
-            role=request.role
+            role=request.role,
+            filename=request.filename,
+            days_ago=request.days_ago
         )
     except ValueError as e:
         if retrieval_span:

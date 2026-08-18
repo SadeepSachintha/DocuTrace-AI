@@ -10,6 +10,13 @@ from app.schemas import DocumentUploadResponse
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
+@router.get("/list")
+async def list_documents(db: AsyncSession = Depends(get_db)):
+    stmt = select(Document.filename, Document.department).distinct()
+    res = await db.execute(stmt)
+    rows = res.all()
+    return [{"filename": r.filename, "department": r.department} for r in rows]
+
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
     file: UploadFile = File(...),

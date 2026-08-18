@@ -26,7 +26,16 @@ To handle complex corporate documents that contain flowcharts, architectural dra
 
 ---
 
-## 3. Database Models & Schema Specifications
+## 3. Metadata Filtering & Advanced Query Scopes
+
+To support targeted document queries, the vector and full-text search SQL generators dynamically apply two metadata constraints:
+1. **`filename` filtering**: Scopes queries to match chunks associated with a specific file name inside the `Document` relation.
+2. **`created_at` timestamp range filtering**: Dynamically filters by comparing document creation dates against UTC cutoff calculations based on user-selected days (24 hours, 7 days, 30 days).
+3. **Unique Document List Endpoint**: Exposes a `GET /documents/list` endpoint which returns unique filename registries to populate frontend select inputs.
+
+---
+
+## 4. Database Models & Schema Specifications
 
 The database contains the following tables:
 
@@ -38,7 +47,7 @@ The database contains the following tables:
 
 ---
 
-## 4. Environment Configurations (`.env`)
+## 5. Environment Configurations (`.env`)
 
 Deploying the system requires setting up the following values in the `.env` file:
 
@@ -68,7 +77,7 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 
 ---
 
-## 5. Maintenance & Operational Monitoring
+## 6. Maintenance & Operational Monitoring
 
 ### Startup & Operations
 1. **Starting the database container**:
@@ -82,27 +91,16 @@ LANGFUSE_HOST=https://cloud.langfuse.com
    .venv\Scripts\python main.py
    ```
 
-### Backup and Database Restores
-To dump the database content from the PostgreSQL container:
-```bash
-# Dump DB data to local file
-docker exec -t rag_pgvector pg_dump -U rag_password -d rag_documents > backup_rag.sql
-
-# Restore DB data from local dump
-cat backup_rag.sql | docker exec -i rag_pgvector psql -U rag_password -d rag_documents
-```
-
 ---
 
-## 6. Product Handoff Checklist
+## 7. Product Handoff Checklist
 
 Before concluding the handover, verify that:
 - [ ] Docker container is running and port `5433` is listening.
 - [ ] FastAPI server is active on `http://localhost:8008` and the GUI loads.
 - [ ] PDF document ingestion extracts Markdown tables and processes visual image captions.
-- [ ] English, Sinhala, and Tamil queries return source-attributed answers with precise page citations.
-- [ ] Asking follow-up queries with pronouns correctly resolves preceding context in the conversation thread.
-- [ ] simulated user role restrictions are successfully enforced (throwing `403 Forbidden` on unauthorized department queries).
+- [ ] simulated user role restrictions are successfully enforced.
+- [ ] Filename search scope filters and date range filters correctly isolate/exclude RAG search inputs.
 
 ---
 

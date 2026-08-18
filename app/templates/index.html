@@ -560,6 +560,25 @@
                 </select>
             </div>
 
+            <div class="section-title">Search Scope Filters</div>
+
+            <div class="form-group">
+                <label class="form-label" for="filter-file">Filter by File</label>
+                <select class="select-input" id="filter-file">
+                    <option value="">Search All Files</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="filter-date">Filter by Date</label>
+                <select class="select-input" id="filter-date">
+                    <option value="">Any Time</option>
+                    <option value="1">Last 24 Hours</option>
+                    <option value="7">Last 7 Days</option>
+                    <option value="30">Last 30 Days</option>
+                </select>
+            </div>
+
             <button class="btn" id="upload-btn" disabled>
                 <i data-lucide="sparkles" size="18"></i>
                 Upload Policy
@@ -638,6 +657,8 @@
         const chatMessages = document.getElementById('chat-messages');
         const newChatBtn = document.getElementById('new-chat-btn');
         const roleSelect = document.getElementById('role-select');
+        const filterFile = document.getElementById('filter-file');
+        const filterDate = document.getElementById('filter-date');
 
         let selectedFile = null;
         let currentSessionId = null;
@@ -718,6 +739,9 @@
                     selectedFile = null;
                     dropZone.querySelector('.upload-text').innerText = 'Drag & Drop PDF here';
                     dropZone.querySelector('.upload-subtext').innerText = 'or click to browse local files';
+
+                    // Refresh file list dropdown
+                    loadDocumentList();
                 } else {
                     const err = await response.text();
                     throw new Error(err);
@@ -777,6 +801,7 @@
             const loaderId = appendLoader();
 
             try {
+                const daysAgoVal = filterDate.value ? parseInt(filterDate.value) : null;
                 const response = await fetch('/rag/query', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -785,7 +810,9 @@
                         department: deptSelect.value,
                         similarity_top_k: 3,
                         session_id: currentSessionId,
-                        role: roleSelect.value
+                        role: roleSelect.value,
+                        filename: filterFile.value || null,
+                        days_ago: daysAgoVal
                     })
                 });
 
@@ -908,6 +935,30 @@
                 loader.remove();
             }
         }
+
+        async function loadDocumentList() {
+            try {
+                const response = await fetch('/documents/list');
+                if (response.ok) {
+                    const files = await response.json();
+                    
+                    // Clear and add default
+                    filterFile.innerHTML = '<option value="">Search All Files</option>';
+                    
+                    files.forEach(f => {
+                        const opt = document.createElement('option');
+                        opt.value = f.filename;
+                        opt.textContent = `${f.filename} (${f.department})`;
+                        filterFile.appendChild(opt);
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to load document list:', err);
+            }
+        }
+
+        // Load document files list on page start
+        loadDocumentList();
     </script>
 </body>
 </html>

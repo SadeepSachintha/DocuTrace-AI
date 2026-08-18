@@ -15,6 +15,8 @@ class QueryRequest(BaseModel):
     similarity_top_k: int = 4
     session_id: Optional[UUID] = None
     role: str = "regular_user"
+    filename: Optional[str] = None
+    days_ago: Optional[int] = None
 
 class CitationSource(BaseModel):
     document_name: str

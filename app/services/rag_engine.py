@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta
 from langdetect import detect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, text, func
@@ -25,7 +26,9 @@ class RAGEngine:
         query: str, 
         department: str | None = None, 
         top_k: int = 4,
-        role: str = "regular_user"
+        role: str = "regular_user",
+        filename: str | None = None,
+        days_ago: int | None = None
     ) -> List[Dict[str, Any]]:
         # Detect query language
         try:
@@ -103,6 +106,11 @@ class RAGEngine:
             depts_to_search = allowed_depts
 
         dense_stmt = dense_stmt.where(Document.department.in_(depts_to_search))
+        if filename:
+            dense_stmt = dense_stmt.where(Document.filename == filename)
+        if days_ago:
+            cutoff_date = datetime.utcnow() - timedelta(days=days_ago)
+            dense_stmt = dense_stmt.where(Document.created_at >= cutoff_date)
 
         # Lexical search combines original + translated keywords
         lexical_query = query
@@ -129,6 +137,11 @@ class RAGEngine:
             .limit(search_limit)
         )
         sparse_stmt = sparse_stmt.where(Document.department.in_(depts_to_search))
+        if filename:
+            sparse_stmt = sparse_stmt.where(Document.filename == filename)
+        if days_ago:
+            cutoff_date = datetime.utcnow() - timedelta(days=days_ago)
+            sparse_stmt = sparse_stmt.where(Document.created_at >= cutoff_date)
 
         # Execute both searches concurrently
         dense_task = db.execute(dense_stmt)
