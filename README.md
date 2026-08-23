@@ -139,6 +139,11 @@ For more details on deploying and operating this product:
    ```
 
 5. **Start the API Server**:
+   You can start both the database container and the FastAPI app server in one click by running:
+   ```cmd
+   run.bat
+   ```
+   Or launch the server manually:
    ```bash
    .venv\Scripts\python main.py
    ```
